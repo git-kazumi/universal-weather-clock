@@ -185,20 +185,48 @@ def get_weather(city_name, lat, lon):
         temp = data["current_weather"]["temperature"]
         weather_code = data["current_weather"]["weathercode"]
 
-        # WMO Weather interpretation codes のマッピング
+        # WMO Weather interpretation codes の完全マッピング（WMO 4677 / Open-Meteo準拠）
         weather_map = {
-            0: "晴れ",
-            1: "晴時々曇",
-            2: "曇時々晴",
-            3: "曇り",
+            # 快晴・晴れ・曇り
+            0:  "快晴",
+            1:  "晴れ",
+            2:  "曇時々晴",
+            3:  "曇り",
+            # 霧・氷霧
             45: "霧",
-            48: "霧",
-            51: "小雨",
-            61: "雨",
-            71: "雪",
+            48: "着氷性の霧",
+            # 霧雨（非凍結）
+            51: "小雨（霧雨）",
+            53: "霧雨",
+            55: "強い霧雨",
+            # 着氷性の霧雨
+            56: "着氷性の霧雨（弱）",
+            57: "着氷性の霧雨（強）",
+            # 雨（非凍結）
+            61: "小雨",
+            63: "雨",
+            65: "大雨",
+            # 着氷性の雨
+            66: "着氷性の雨（弱）",
+            67: "着氷性の雨（強）",
+            # 雪
+            71: "小雪",
+            73: "雪",
+            75: "大雪",
+            77: "霰（みぞれ）",
+            # にわか雨
+            80: "にわか雨（弱）",
+            81: "にわか雨",
+            82: "にわか雨（強）",
+            # にわか雪
+            85: "にわか雪（弱）",
+            86: "にわか雪（強）",
+            # 雷雨
             95: "雷雨",
+            96: "雷雨と小さな雹",
+            99: "雷雨と大きな雹",
         }
-        weather_text = weather_map.get(weather_code, "不明")
+        weather_text = weather_map.get(weather_code, f"不明(コード:{weather_code})")
 
         # 表示ラベルの更新
         weather_label.config(text=f"{city_name}: {weather_text} {temp}℃")
