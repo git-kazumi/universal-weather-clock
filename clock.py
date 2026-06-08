@@ -265,6 +265,51 @@ def setup_initial_location():
     get_weather(city, lat, lon)
 
 
+def get_earthquake_info():
+    try:
+        url = "https://api.p2pquake.net/v2/history?codes=551&limit=10"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        records = response.json()
+
+        lines = []
+        seen = set()  # 重複チェック用セット
+
+        for rec in records:
+            eq = rec.get("earthquake", {})
+            time_str = eq.get("time", "不明")
+            try:
+                dt = datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S")
+                time_disp = dt.strftime("%Y/%m/%d %H:%M")
+            except ValueError:
+                time_disp = time_str
+
+            hypo = eq.get("hypocenter", {})
+            name = hypo.get("name", "不明")
+            magnitude = hypo.get("magnitude", -1)
+            mag_disp = f"M{magnitude:.1f}" if magnitude >= 0 else "M---"
+
+            # 重複チェック：同一キーはスキップ
+            key = (time_disp, name, mag_disp)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            lines.append(f"{time_disp}  {name}  {mag_disp}")
+
+            # 重複除去後に5件に達したら終了
+            if len(lines) >= 5:
+                break
+
+        display_text = "\n".join(lines) if lines else "地震情報なし"
+        quake_label.config(text=display_text)
+
+    except Exception:
+        quake_label.config(text="地震情報取得エラー")
+
+    root.after(600000, get_earthquake_info)
+
+
 # --- GUI構成の初期化 ---
 root = tk.Tk()
 root.title("Universal Weather Clock")
@@ -330,8 +375,25 @@ tk.Button(
     command=on_zipcode_search
 ).pack(side=tk.LEFT)
 
+# --- 地震情報エリア ---
+tk.Label(
+    root, text="── 最新地震情報 ──", font=("MS Gothic", 10), fg="gray", bg="black"
+).pack(pady=(6, 2))
+
+quake_label = tk.Label(
+    root,
+    font=("MS Gothic", 11),
+    fg="#ffaa00",   # 視認性のためオレンジ系
+    bg="black",
+    justify=tk.LEFT,
+    padx=16,
+    pady=4,
+)
+quake_label.pack(anchor=tk.W)
+
 # --- プログラム実行 ---
 if __name__ == "__main__":
     update_clock()
     setup_initial_location()
+    get_earthquake_info()
     root.mainloop()
