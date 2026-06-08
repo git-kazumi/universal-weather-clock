@@ -1,7 +1,7 @@
 # Universal Weather Clock
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)
 
 シンプルで視認性の高い天気予報・地震情報付きデスクトップ時計アプリケーション。IPアドレスから自動的に現在地を特定し、リアルタイムで気象情報と最新地震情報を表示します。
 
