@@ -1,7 +1,7 @@
 # Universal Weather Clock
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.2-blue.svg)
 
 シンプルで視認性の高い天気予報・地震情報付きデスクトップ時計アプリケーション。IPアドレスから自動的に現在地を特定し、リアルタイムで気象情報と最新地震情報を表示します。
 
@@ -274,6 +274,11 @@ response = requests.get(..., timeout=15)  # 15秒に延長
 バグ報告や機能提案はIssuesセクションにお願いします。
 
 ## 更新履歴
+
+### v1.1.2 (2026-06-15)
+- 天気更新タイマーの重複蓄積バグを修正
+- 地点を手動変更するたびに古いタイマーが残存し、数時間後に表示が元の場所に戻ってしまう問題を解消
+- `root.after()` のIDを `weather_timer_id` で管理し、新規タイマーセット前に `root.after_cancel()` で旧タイマーをキャンセルする方式に変更
 
 ### v1.1.1 (2026-06-08)
 - 地震情報の重複表示を修正（同一地震が複数レコードで返される場合に除去）

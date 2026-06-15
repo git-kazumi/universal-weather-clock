@@ -10,6 +10,9 @@ from tkinter import messagebox
 from datetime import datetime
 import requests
 
+# 天気更新タイマーのIDを管理する変数（タイマーの重複を防ぐ）
+weather_timer_id = None
+
 # 地域 -> 都市の階層構造リスト
 LOCATIONS = {
     "北海道": {
@@ -172,6 +175,13 @@ def get_weather(city_name, lat, lon):
     """
     Open-Meteo APIを使用して指定された座標の天気を取得し、GUIを更新する。
     """
+    global weather_timer_id
+
+    # 既存のタイマーをキャンセルして、タイマーの重複蓄積を防ぐ
+    if weather_timer_id is not None:
+        root.after_cancel(weather_timer_id)
+        weather_timer_id = None
+
     try:
         url = (
             f"https://api.open-meteo.com/v1/forecast"
@@ -234,12 +244,14 @@ def get_weather(city_name, lat, lon):
             text=f"情報更新: {datetime.now().strftime('%H:%M')} (自動取得)"
         )
 
-        # 30分（1,800,000ミリ秒）後に再更新をスケジュール
-        root.after(1800000, lambda: get_weather(city_name, lat, lon))
+        # 30分（1,800,000ミリ秒）後に再更新をスケジュール（IDを保存）
+        weather_timer_id = root.after(1800000, lambda: get_weather(city_name, lat, lon))
 
     except Exception:
         weather_label.config(text="データ取得エラー")
         status_label.config(text="更新失敗")
+        # エラー時も次回の自動更新をスケジュール（IDを保存）
+        weather_timer_id = root.after(1800000, lambda: get_weather(city_name, lat, lon))
 
 
 def update_clock():
