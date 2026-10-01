@@ -6,12 +6,28 @@ https://opensource.org/licenses/mit-license.php
 """
 
 import tkinter as tk
+from datetime import datetime, timedelta, timezone
 from tkinter import messagebox
-from datetime import datetime
+
 import requests
 
-# 天気更新タイマーのIDを管理する変数（タイマーの重複を防ぐ）
-weather_timer_id = None
+# 日本標準時（UTC+9）
+JST = timezone(timedelta(hours=9), "JST")
+
+# 郵便番号の桁数
+ZIPCODE_LENGTH = 7
+
+# 地震情報の表示件数
+QUAKE_DISPLAY_LIMIT = 5
+
+# 各種更新間隔（ミリ秒）
+CLOCK_INTERVAL_MS = 1000  # 時計：1秒
+WEATHER_INTERVAL_MS = 30 * 60 * 1000  # 天気：30分
+QUAKE_INTERVAL_MS = 10 * 60 * 1000  # 地震情報：10分
+
+# 天気更新タイマーのIDを管理する（タイマーの重複を防ぐ）
+# global 文を使わずに済むよう、辞書で状態を保持する
+timer_state: dict[str, str | None] = {"weather": None}
 
 # 地域 -> 都市の階層構造リスト
 LOCATIONS = {
@@ -51,7 +67,7 @@ LOCATIONS = {
         "静岡市": {"lat": 34.9756, "lon": 138.3828},
         "名古屋市": {"lat": 35.1815, "lon": 136.9064},
         "岐阜市": {"lat": 35.4232, "lon": 136.7608},
-        "津市":   {"lat": 34.7303, "lon": 136.5086},
+        "津市": {"lat": 34.7303, "lon": 136.5086},
     },
     "近畿": {
         "大阪市": {"lat": 34.6937, "lon": 135.5023},
@@ -93,7 +109,7 @@ LOCATIONS = {
 }
 
 
-def get_current_location_by_ip():
+def get_current_location_by_ip() -> tuple[str, float, float]:
     """
     IPアドレスから現在地の位置情報を取得する。
     取得に失敗した場合は、デフォルトとして東京都(新宿)の情報を返す。
@@ -104,14 +120,15 @@ def get_current_location_by_ip():
         data = response.json()
         if data["status"] == "success":
             return data["city"], data["lat"], data["lon"]
-    except Exception:
+    except (requests.RequestException, ValueError, KeyError):
+        # 通信失敗・JSON解析失敗・項目欠けの場合はフォールバック地点を使う
         pass
 
     # フォールバック地点（新宿）
     return "東京都(新宿)", 35.6895, 139.6917
 
 
-def get_location_by_zipcode(zipcode):
+def get_location_by_zipcode(zipcode: str) -> tuple[str, float, float] | None:
     """
     HeartRails Geo APIを使用して郵便番号から住所・緯度・経度を取得する。
     郵便番号はハイフンあり・なし両方に対応（例: 160-0022 または 1600022）。
@@ -121,8 +138,11 @@ def get_location_by_zipcode(zipcode):
     # ハイフンを除去して7桁に統一
     zipcode_clean = zipcode.replace("-", "").strip()
 
-    if len(zipcode_clean) != 7 or not zipcode_clean.isdigit():
-        messagebox.showerror("入力エラー", "郵便番号は7桁の数字で入力してください。\n例: 1600022 または 160-0022")
+    if len(zipcode_clean) != ZIPCODE_LENGTH or not zipcode_clean.isdigit():
+        messagebox.showerror(
+            "入力エラー",
+            "郵便番号は7桁の数字で入力してください。\n例: 1600022 または 160-0022",
+        )
         return None
 
     try:
@@ -133,7 +153,10 @@ def get_location_by_zipcode(zipcode):
 
         locations = data.get("response", {}).get("location")
         if not locations:
-            messagebox.showerror("取得エラー", f"郵便番号 {zipcode} に対応する住所が見つかりませんでした。")
+            messagebox.showerror(
+                "取得エラー",
+                f"郵便番号 {zipcode} に対応する住所が見つかりませんでした。",
+            )
             return None
 
         # 先頭の結果を使用
@@ -145,14 +168,25 @@ def get_location_by_zipcode(zipcode):
         lon = float(loc.get("x"))  # HeartRails は経度を "x" で返す
         city_name = f"{prefecture}{city}{town}"
 
+    except requests.RequestException as e:
+        # 接続失敗・タイムアウト・HTTPエラー
+        messagebox.showerror(
+            "通信エラー",
+            f"HeartRails Geo APIへの接続に失敗しました。\n{e}",
+        )
+        return None
+    except (ValueError, TypeError, KeyError, IndexError) as e:
+        # JSON解析失敗・緯度経度の欠けや数値変換の失敗
+        messagebox.showerror(
+            "取得エラー",
+            f"住所データの解析に失敗しました。\n{e}",
+        )
+        return None
+    else:
         return city_name, lat, lon
 
-    except Exception as e:
-        messagebox.showerror("通信エラー", f"HeartRails Geo APIへの接続に失敗しました。\n{e}")
-        return None
 
-
-def on_zipcode_search():
+def on_zipcode_search() -> None:
     """
     郵便番号入力欄の内容を取得し、位置情報を検索して天気を更新する。
     """
@@ -171,16 +205,14 @@ def on_zipcode_search():
         get_weather(city_name, lat, lon)
 
 
-def get_weather(city_name, lat, lon):
+def get_weather(city_name: str, lat: float, lon: float) -> None:
     """
     Open-Meteo APIを使用して指定された座標の天気を取得し、GUIを更新する。
     """
-    global weather_timer_id
-
     # 既存のタイマーをキャンセルして、タイマーの重複蓄積を防ぐ
-    if weather_timer_id is not None:
-        root.after_cancel(weather_timer_id)
-        weather_timer_id = None
+    if timer_state["weather"] is not None:
+        root.after_cancel(timer_state["weather"])
+        timer_state["weather"] = None
 
     try:
         url = (
@@ -198,10 +230,10 @@ def get_weather(city_name, lat, lon):
         # WMO Weather interpretation codes の完全マッピング（WMO 4677 / Open-Meteo準拠）
         weather_map = {
             # 快晴・晴れ・曇り
-            0:  "快晴",
-            1:  "晴れ",
-            2:  "曇時々晴",
-            3:  "曇り",
+            0: "快晴",
+            1: "晴れ",
+            2: "曇時々晴",
+            3: "曇り",
             # 霧・氷霧
             45: "霧",
             48: "着氷性の霧",
@@ -241,34 +273,36 @@ def get_weather(city_name, lat, lon):
         # 表示ラベルの更新
         weather_label.config(text=f"{city_name}: {weather_text} {temp}℃")
         status_label.config(
-            text=f"情報更新: {datetime.now().strftime('%H:%M')} (自動取得)"
+            text=f"情報更新: {datetime.now(JST).strftime('%H:%M')} (自動取得)",
         )
 
-        # 30分（1,800,000ミリ秒）後に再更新をスケジュール（IDを保存）
-        weather_timer_id = root.after(1800000, lambda: get_weather(city_name, lat, lon))
-
-    except Exception:
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        # 通信失敗・JSON解析失敗・項目欠けの場合
         weather_label.config(text="データ取得エラー")
         status_label.config(text="更新失敗")
-        # エラー時も次回の自動更新をスケジュール（IDを保存）
-        weather_timer_id = root.after(1800000, lambda: get_weather(city_name, lat, lon))
+
+    # 成功・失敗にかかわらず、30分後に再更新をスケジュール（IDを保存）
+    timer_state["weather"] = root.after(
+        WEATHER_INTERVAL_MS,
+        lambda: get_weather(city_name, lat, lon),
+    )
 
 
-def update_clock():
+def update_clock() -> None:
     """
     1秒ごとに現在時刻を取得し、時計表示を更新する。
     """
-    now = datetime.now()
+    now = datetime.now(JST)
     weeks = ["月", "火", "水", "木", "金", "土", "日"]
     day_of_week = weeks[now.weekday()]
     date_str = now.strftime(f"%Y/%m/%d({day_of_week})")
     time_str = now.strftime("%H:%M:%S")
 
     clock_label.config(text=f"{date_str}\n{time_str}")
-    clock_label.after(1000, update_clock)
+    clock_label.after(CLOCK_INTERVAL_MS, update_clock)
 
 
-def setup_initial_location():
+def setup_initial_location() -> None:
     """
     アプリケーション起動時に現在地を特定し、初期表示を行う。
     """
@@ -277,7 +311,10 @@ def setup_initial_location():
     get_weather(city, lat, lon)
 
 
-def get_earthquake_info():
+def get_earthquake_info() -> None:
+    """
+    P2P地震情報APIから最新の地震情報を取得し、表示を更新する。
+    """
     try:
         url = "https://api.p2pquake.net/v2/history?codes=551&limit=10"
         response = requests.get(url, timeout=10)
@@ -291,7 +328,10 @@ def get_earthquake_info():
             eq = rec.get("earthquake", {})
             time_str = eq.get("time", "不明")
             try:
-                dt = datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S")
+                # APIの時刻は日本時間なので、JSTのタイムゾーンを付ける
+                dt = datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S").replace(
+                    tzinfo=JST,
+                )
                 time_disp = dt.strftime("%Y/%m/%d %H:%M")
             except ValueError:
                 time_disp = time_str
@@ -309,17 +349,18 @@ def get_earthquake_info():
 
             lines.append(f"{time_disp}  {name}  {mag_disp}")
 
-            # 重複除去後に5件に達したら終了
-            if len(lines) >= 5:
+            # 重複除去後に規定件数に達したら終了
+            if len(lines) >= QUAKE_DISPLAY_LIMIT:
                 break
 
         display_text = "\n".join(lines) if lines else "地震情報なし"
         quake_label.config(text=display_text)
 
-    except Exception:
+    except (requests.RequestException, ValueError, TypeError, AttributeError):
+        # 通信失敗・JSON解析失敗・データ形式の想定外
         quake_label.config(text="地震情報取得エラー")
 
-    root.after(600000, get_earthquake_info)
+    root.after(QUAKE_INTERVAL_MS, get_earthquake_info)
 
 
 # --- GUI構成の初期化 ---
@@ -340,20 +381,25 @@ for region, cities in LOCATIONS.items():
         sub_menu.add_command(
             label=city,
             command=lambda c=city, la=coords["lat"], lo=coords["lon"]: get_weather(
-                c, la, lo
+                c,
+                la,
+                lo,
             ),
         )
     loc_menu.add_cascade(label=region, menu=sub_menu)
 
 # 現在地再取得オプション
 loc_menu.add_separator()
-loc_menu.add_command(
-    label="現在地を自動再取得", command=setup_initial_location
-)
+loc_menu.add_command(label="現在地を自動再取得", command=setup_initial_location)
 
 # ウィジェットの作成と配置
 clock_label = tk.Label(
-    root, font=("MS Gothic", 36, "bold"), fg="cyan", bg="black", padx=20, pady=10
+    root,
+    font=("MS Gothic", 36, "bold"),
+    fg="cyan",
+    bg="black",
+    padx=20,
+    pady=10,
 )
 clock_label.pack()
 
@@ -368,34 +414,54 @@ zipcode_frame = tk.Frame(root, bg="black")
 zipcode_frame.pack(pady=(0, 8))
 
 tk.Label(
-    zipcode_frame, text="郵便番号:", font=("MS Gothic", 11), fg="gray", bg="black"
+    zipcode_frame,
+    text="郵便番号:",
+    font=("MS Gothic", 11),
+    fg="gray",
+    bg="black",
 ).pack(side=tk.LEFT, padx=(0, 4))
 
 zipcode_entry = tk.Entry(
-    zipcode_frame, font=("MS Gothic", 13), width=10,
-    bg="#1a1a1a", fg="white", insertbackground="white",
-    relief=tk.FLAT, bd=2
+    zipcode_frame,
+    font=("MS Gothic", 13),
+    width=10,
+    bg="#1a1a1a",
+    fg="white",
+    insertbackground="white",
+    relief=tk.FLAT,
+    bd=2,
 )
 zipcode_entry.pack(side=tk.LEFT, padx=(0, 6))
 # Enterキーでも検索できるようにバインド
-zipcode_entry.bind("<Return>", lambda event: on_zipcode_search())
+zipcode_entry.bind("<Return>", lambda _event: on_zipcode_search())
 
 tk.Button(
-    zipcode_frame, text="検索", font=("MS Gothic", 11),
-    bg="#333333", fg="white", activebackground="#555555", activeforeground="white",
-    relief=tk.FLAT, padx=8, pady=2,
-    command=on_zipcode_search
+    zipcode_frame,
+    text="検索",
+    font=("MS Gothic", 11),
+    bg="#333333",
+    fg="white",
+    activebackground="#555555",
+    activeforeground="white",
+    relief=tk.FLAT,
+    padx=8,
+    pady=2,
+    command=on_zipcode_search,
 ).pack(side=tk.LEFT)
 
 # --- 地震情報エリア ---
 tk.Label(
-    root, text="── 最新地震情報 ──", font=("MS Gothic", 10), fg="gray", bg="black"
+    root,
+    text="── 最新地震情報 ──",
+    font=("MS Gothic", 10),
+    fg="gray",
+    bg="black",
 ).pack(pady=(6, 2))
 
 quake_label = tk.Label(
     root,
     font=("MS Gothic", 11),
-    fg="#ffaa00",   # 視認性のためオレンジ系
+    fg="#ffaa00",  # 視認性のためオレンジ系
     bg="black",
     justify=tk.LEFT,
     padx=16,

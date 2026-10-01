@@ -1,7 +1,7 @@
 # Universal Weather Clock
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![Version](https://img.shields.io/badge/version-1.1.2-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.3-blue.svg)
 
 シンプルで視認性の高い天気予報・地震情報付きデスクトップ時計アプリケーション。IPアドレスから自動的に現在地を特定し、リアルタイムで気象情報と最新地震情報を表示します。
 
@@ -18,7 +18,7 @@
 
 ## 必要な環境
 
-- Python 3.7以上
+- Python 3.10以上（v1.1.3より型ヒントの記法変更に伴い引き上げ）
 - tkinter（通常Pythonに同梱）
 - requests ライブラリ
 
@@ -141,7 +141,8 @@ Open-MeteoはWMO（世界気象機関）の天気コードに準拠していま�
 | ネットワーク障害 | ステータスに「更新失敗」と表示 |
 | 郵便番号が不正（7桁以外） | エラーダイアログで通知 |
 | 郵便番号が未登録 | エラーダイアログで通知 |
-| HeartRails API接続失敗 | エラーダイアログで通知 |
+| HeartRails API接続失敗 | エラーダイアログで通知（通信エラー） |
+| 郵便番号APIの応答データが不正 | エラーダイアログで通知（取得エラー） |
 | 地震情報取得失敗 | 「地震情報取得エラー」を表示 |
 
 ## 出力例
@@ -211,20 +212,15 @@ LOCATIONS = {
 return "大阪市", 34.6937, 135.5023
 ```
 
-### 更新間隔の変更
+### 更新間隔・表示件数の変更
 
-`get_weather()`関数の以下の行を修正（ミリ秒単位）：
-
-```python
-root.after(1800000, ...)  # デフォルト30分
-root.after(600000, ...)   # 10分に変更
-```
-
-`get_earthquake_info()`関数の以下の行を修正（ミリ秒単位）：
+ファイル先頭の定数を修正してください（間隔はミリ秒単位）：
 
 ```python
-root.after(600000, get_earthquake_info)   # デフォルト10分
-root.after(300000, get_earthquake_info)   # 5分に変更
+CLOCK_INTERVAL_MS = 1000  # 時計：1秒
+WEATHER_INTERVAL_MS = 30 * 60 * 1000  # 天気：30分
+QUAKE_INTERVAL_MS = 10 * 60 * 1000  # 地震情報：10分
+QUAKE_DISPLAY_LIMIT = 5  # 地震情報の表示件数
 ```
 
 ## 日本語対応
@@ -275,6 +271,15 @@ response = requests.get(..., timeout=15)  # 15秒に延長
 
 ## 更新履歴
 
+### v1.1.3 (2026-10-01)
+- コード品質の改善（静的解析ツール [Ruff](https://docs.astral.sh/ruff/) の全ルールに準拠）
+- `except Exception` による一括捕捉をやめ、想定する例外（通信エラー・データ解析エラーなど）のみを捕捉するよう変更
+- 郵便番号検索で、通信エラーと応答データの解析エラーを別のメッセージで通知するよう改善
+- 地震情報の時刻に日本時間（JST）のタイムゾーンを付与
+- 更新間隔・郵便番号の桁数・地震情報の表示件数を定数化
+- 天気更新タイマーIDの管理を `global` 文から辞書 `timer_state` に変更
+- 全関数に型ヒントを追加（これに伴い動作環境を Python 3.10以上に変更）
+
 ### v1.1.2 (2026-06-15)
 - 天気更新タイマーの重複蓄積バグを修正
 - 地点を手動変更するたびに古いタイマーが残存し、数時間後に表示が元の場所に戻ってしまう問題を解消
@@ -301,4 +306,4 @@ response = requests.get(..., timeout=15)  # 15秒に延長
 
 ---
 
-**最終更新**: 2026年6月
+**最終更新**: 2026年10月
