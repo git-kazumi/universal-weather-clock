@@ -1,7 +1,8 @@
 # Universal Weather Clock
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![Version](https://img.shields.io/badge/version-1.1.3-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B%20(tested%203.13)-blue.svg)
 
 シンプルで視認性の高い天気予報・地震情報付きデスクトップ時計アプリケーション。IPアドレスから自動的に現在地を特定し、リアルタイムで気象情報と最新地震情報を表示します。
 
@@ -18,7 +19,7 @@
 
 ## 必要な環境
 
-- Python 3.10以上（v1.1.3より型ヒントの記法変更に伴い引き上げ）
+- Python 3.10以上（動作確認・推奨バージョンは **Python 3.13**）
 - tkinter（通常Pythonに同梱）
 - requests ライブラリ
 
@@ -30,10 +31,45 @@ git clone https://github.com/YOUR_USERNAME/universal-weather-clock.git
 cd universal-weather-clock
 ```
 
-### 依存ライブラリのインストール
+### 仮想環境の作成（推奨）
 ```bash
-pip install requests
+# Windows（Python Install Manager）
+py -V:3.13 -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+python3.13 -m venv .venv
+source .venv/bin/activate
 ```
+
+### 依存ライブラリのインストール
+
+依存パッケージは、用途に応じて2つのファイルに分けています。
+
+| ファイル | 対象 | 内容 |
+|----------|------|------|
+| `requirements.txt` | アプリを実行する方 | requests とその依存パッケージ |
+| `requirements-dev.txt` | 開発・exe化を行う方 | `requirements.txt` の内容 + 開発用ツール |
+
+#### アプリを実行する場合
+
+```bash
+pip install -r requirements.txt
+```
+
+#### 開発・exe化を行う場合
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+`requirements-dev.txt` は先頭で `requirements.txt` を読み込んでいるため、実行用のパッケージも一緒にインストールされます。追加される開発用ツールは以下のとおりです。
+
+| ツール | 用途 |
+|--------|------|
+| [Nuitka](https://nuitka.net/) | exeファイルの作成 |
+| [zstandard](https://pypi.org/project/zstandard/) | Nuitka（onefile形式）での圧縮 |
+| [pip-audit](https://pypi.org/project/pip-audit/) | 依存パッケージの脆弱性チェック |
 
 ## 使い方
 
@@ -76,6 +112,51 @@ python clock.py
 #### 現在地の再取得
 
 「地点変更」→「現在地を自動再取得」を選ぶと、IP判定を再実行して現在地を更新します。
+
+## exeファイルの作成（Windows）
+
+[Nuitka](https://nuitka.net/) を使用して、単体で動作するexeファイルを作成できます。
+
+### 事前準備
+
+開発用ツールをインストールしておきます。
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
+Python 3.13 では Nuitka の MinGW64 が使用できないため、**Visual Studio Build Tools**（C++ によるデスクトップ開発）が必要です。
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+### ビルド
+
+```powershell
+# 実行用パッケージの脆弱性チェック（問題がないことを確認してからビルドする）
+pip-audit -r requirements.txt
+
+# exeファイルの作成
+python -m nuitka `
+  --mode=onefile `
+  --windows-console-mode=disable `
+  --enable-plugin=tk-inter `
+  --msvc=latest `
+  --output-dir=build `
+  --output-filename=UniversalWeatherClock.exe `
+  --onefile-tempdir-spec="{CACHE_DIR}/UniversalWeatherClock/{VERSION}" `
+  --product-name="Universal Weather Clock" `
+  --file-version=1.2.0 `
+  --product-version=1.2.0 `
+  --assume-yes-for-downloads `
+  --remove-output `
+  clock.py
+```
+
+`build\UniversalWeatherClock.exe` が作成されます。
+
+> ⚠️ `--file-version` / `--product-version` はリリースごとに必ず更新してください。展開先フォルダがバージョンごとに分かれているため、更新しないと古いファイルが使われる場合があります。
 
 ## 動作仕様
 
@@ -254,7 +335,7 @@ Copyright (c) 2026 大杉一実 (ohsugi kazumi)
 sudo apt-get install python3-tk
 
 # macOS (Homebrew)
-brew install python-tk@3.11
+brew install python-tk@3.13
 ```
 
 ### ネットワークエラーが頻発する場合
@@ -265,11 +346,22 @@ brew install python-tk@3.11
 response = requests.get(..., timeout=15)  # 15秒に延長
 ```
 
+### exe作成時に「cannot locate suitable C compiler」と表示される
+
+Python 3.13 では MinGW64 が使用できません。「[exeファイルの作成（Windows）](#exeファイルの作成windows)」の事前準備に従って Visual Studio Build Tools をインストールし、`--msvc=latest` を指定してください。
+
 ## 貢献
 
 バグ報告や機能提案はIssuesセクションにお願いします。
 
 ## 更新履歴
+
+### v1.2.0 (2026-10-03)
+- 開発・動作確認環境を Python 3.11 から **Python 3.13** へ移行（ソースコードの変更なし。動作環境は引き続き Python 3.10以上）
+- 依存パッケージを更新し、実行用の `requirements.txt` と開発用の `requirements-dev.txt` に分割
+- urllib3 を 2.8.0 に更新（2.7.0 の既知の脆弱性 PYSEC-2026-4175 / 4176 / 4177 に対応）
+- 脆弱性チェックツール [pip-audit](https://pypi.org/project/pip-audit/) を開発環境に導入
+- Nuitka によるexeファイル作成手順を追加（Python 3.13 対応のため MSVC を使用）
 
 ### v1.1.3 (2026-10-01)
 - コード品質の改善（静的解析ツール [Ruff](https://docs.astral.sh/ruff/) の全ルールに準拠）

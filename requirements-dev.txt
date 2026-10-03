@@ -1,0 +1,4 @@
+-r requirements.txt
+Nuitka==4.2.2
+pip-audit==2.10.1
+zstandard==0.25.0
