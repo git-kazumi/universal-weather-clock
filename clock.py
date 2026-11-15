@@ -25,6 +25,10 @@ CLOCK_INTERVAL_MS = 1000  # 時計：1秒
 WEATHER_INTERVAL_MS = 30 * 60 * 1000  # 天気：30分
 QUAKE_INTERVAL_MS = 10 * 60 * 1000  # 地震情報：10分
 
+# 天気表示の文字色（通常時／取得失敗のお知らせ時）
+WEATHER_COLOR_NORMAL = "white"
+WEATHER_COLOR_NOTICE = "#ffcc66"  # 目立ちすぎない淡いオレンジ
+
 # 天気更新タイマーのIDを管理する（タイマーの重複を防ぐ）
 # global 文を使わずに済むよう、辞書で状態を保持する
 timer_state: dict[str, str | None] = {"weather": None}
@@ -270,16 +274,26 @@ def get_weather(city_name: str, lat: float, lon: float) -> None:
         }
         weather_text = weather_map.get(weather_code, f"不明(コード:{weather_code})")
 
-        # 表示ラベルの更新
-        weather_label.config(text=f"{city_name}: {weather_text} {temp}℃")
+        # 表示ラベルの更新（通常の文字色に戻す）
+        weather_label.config(
+            text=f"{city_name}: {weather_text} {temp}℃",
+            fg=WEATHER_COLOR_NORMAL,
+        )
         status_label.config(
             text=f"情報更新: {datetime.now(JST).strftime('%H:%M')} (自動取得)",
         )
 
     except (requests.RequestException, ValueError, KeyError, TypeError):
         # 通信失敗・JSON解析失敗・項目欠けの場合
-        weather_label.config(text="データ取得エラー")
-        status_label.config(text="更新失敗")
+        # エラー表示ではなく「お知らせ」風の穏やかな表記にし、次回リトライ時刻を示す
+        retry_time = datetime.now(JST) + timedelta(milliseconds=WEATHER_INTERVAL_MS)
+        weather_label.config(
+            text="天気情報を取得できませんでした",
+            fg=WEATHER_COLOR_NOTICE,
+        )
+        status_label.config(
+            text=f"情報更新: 失敗 (次回再試行 {retry_time.strftime('%H:%M')})",
+        )
 
     # 成功・失敗にかかわらず、30分後に再更新をスケジュール（IDを保存）
     timer_state["weather"] = root.after(
